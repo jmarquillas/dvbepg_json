@@ -5,7 +5,7 @@
 #include <errno.h>
 #include <iconv.h>
 
-#define MAX 1024
+#define MAX 4096
 static char buf[MAX * 6]; /* UTF-8 needs up to 6 bytes */
 static char result[MAX * 6]; /* xml-ification needs up to 6 bytes */
 
@@ -140,6 +140,12 @@ char *xmlify(const char *s) {
 				*r++ = 't';
 				*r++ = ';';
 				break;
+			case '\n':
+				*r++ = '<';
+				*r++ = 'b';
+				*r++ = 'r';
+				*r++ = '>';
+				break;
 			case 0x0000 ... 0x0008:
 			case 0x000B ... 0x001F:
 			case 0x007F:
@@ -152,6 +158,94 @@ char *xmlify(const char *s) {
 	*r = '\0';
 	return result;
 } // xmlify
+
+
+/* Quote the json entities in the string passed in.
+ */
+char *jsonify(const char *s) {
+	char cs_new[16];
+
+	int i = (int)(unsigned char)s[0];
+	if (encoding[i].handler(cs_new, &s, encoding[i].data))
+		return "";
+	if (strncmp(cs_old, cs_new, 16)) {
+		if (cd) {
+			iconv_close(cd);
+			cd = NULL;
+		} // if
+		cd = iconv_open("UTF-8", cs_new);
+		if (cd == (iconv_t)-1) {
+			fprintf(stderr, "iconv_open() failed: %s\n", strerror(errno));
+			exit(1);
+		} // if
+		strncpy(cs_old, cs_new, 16);
+	} // if
+
+	char *inbuf = (char *)s;
+	size_t inbytesleft = strlen(s);
+	char *outbuf = (char *)buf;
+	size_t outbytesleft = sizeof(buf);
+	size_t ret = iconv(cd, &inbuf, &inbytesleft, &outbuf, &outbytesleft);
+	if (ret == (size_t)-1) {
+		fprintf(stderr, "iconv() failed: %s\n", strerror(errno));
+		// exit(1); // FIXME: handle errors
+	} // if
+
+	// Luckily '&<> are single byte character sequences in UTF-8 and no
+	// other character will have a UTF-8 sequence containing these
+	// patterns. Because the MSB is set in all multi-byte sequences, we can
+	// simply scan for '&<> and don't have to parse UTF-8 sequences.
+
+	char *b = buf, *r = result;
+	for ( ; b < outbuf; b++)
+		switch (*b) {
+			case '\n':
+				*r++ = '<';
+				*r++ = 'b';
+				*r++ = 'r';
+				*r++ = '>';
+            break;
+#if 0 // only needed for attributes
+			case '"':
+				*r++ = '&';
+				*r++ = 'q';
+				*r++ = 'u';
+				*r++ = 'o';
+				*r++ = 't';
+				*r++ = ';';
+				break;
+#endif
+			case '&':
+				*r++ = '&';
+				*r++ = 'a';
+				*r++ = 'm';
+				*r++ = 'p';
+				*r++ = ';';
+				break;
+			case '<':
+				*r++ = '&';
+				*r++ = 'l';
+				*r++ = 't';
+				*r++ = ';';
+				break;
+			case '>':
+				*r++ = '&';
+				*r++ = 'g';
+				*r++ = 't';
+				*r++ = ';';
+				break;
+			case 0x0000 ... 0x0008:
+			case 0x000B ... 0x001F:
+			case 0x007F:
+				fprintf(stderr, "Forbidden char %02x\n", *b);
+			default:
+				*r++ = *b;
+				break;
+		} // switch
+
+	*r = '\0';
+	return result;
+} // jsonify
 
 #ifdef MAIN
 int main(int argc, char **argv) {

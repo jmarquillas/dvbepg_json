@@ -1,5 +1,5 @@
 /*
- * tv_grab_dvb - dump dvb epg info in json
+ * dvbepg_json - dump dvb epg info in json
  * DVB code Mercilessly ripped off from dvddate
  */
 
@@ -71,13 +71,6 @@ static void usage() {
 		"\n", ProgName, demux);
 	_exit(1);
 } /*}}}*/
-static void add_comma_newline(void) {
-    printf(",\n");
-}
-
-char *jsonify(const char *s) {
-    return (char *) s;
-}
 
 /* Print progress indicator. {{{ */
 static void status() {
@@ -86,7 +79,9 @@ static void status() {
 				packet_count, programme_count, update_count, invalid_date_count, crcerr_count);
 	}
 } /*}}}*/
-
+void printCommaNewline()  {
+    printf(",\n");
+}
 /* Parse command line arguments. {{{ */
 static int do_options(int arg_count, char **arg_strings) {
 	static const struct option Long_Options[] = {
@@ -199,9 +194,8 @@ static void parseEventDescription(void *data, enum ER round) {
 		assert(evtlen < sizeof(evt));
 		memcpy(evt, (char *)&evtdesc->data, evtlen);
 		evt[evtlen] = '\0';
-        add_comma_newline();
-		printf("\t\"title\": { \"lang\":\"%s\",\"text\":\"%s\"}"
-                , xmllang(&evtdesc->lang_code1), xmlify(evt));
+        printCommaNewline();
+		printf("\t\t\"title\":{\n\t\t\t\"lang\":\"%s\",\n\t\t\t\"text\":\"%s\"\n\t\t}", xmllang(&evtdesc->lang_code1), jsonify(evt));
 		return;
 	}
 
@@ -212,13 +206,12 @@ static void parseEventDescription(void *data, enum ER round) {
 		dsc[dsclen] = '\0';
 
 		if (*dsc) {
-			char *d = xmlify(dsc);
+			char *d = jsonify(dsc);
 			if (d && *d) {
-                add_comma_newline();
-                printf("\t\"subtitle\": { \"lang\":\"%s\",\"text\":\"%s\"}"
-                    , xmllang(&evtdesc->lang_code1),d);
+                printCommaNewline();
+				printf("\t\t\"subtitle\":{\n\t\t\t\"lang\":\"%s\",\n\t\t\t\"text\":\"%s\"\n\t\t}", xmllang(&evtdesc->lang_code1), d);
             }
-		}
+        }
 	}
 } /*}}}*/
 
@@ -230,8 +223,8 @@ void parseLongEventDescription(void *data) {
 	bool non_empty = (levt->descriptor_number || levt->last_descriptor_number || levt->length_of_items || levt->data[0]);
 
 	if (non_empty && levt->descriptor_number == 0) {
-        add_comma_newline();
-		printf("\t\"desc\":{ \"lang\":\"%s\",\"text\":\"", xmllang(&levt->lang_code1));
+        printCommaNewline();
+		printf("\t\t\"desc\": {\n\t\t\t\"lang\":\"%s\",\n\t\t\t\"text\":\"", xmllang(&levt->lang_code1));
     }
 	void *p = &levt->data;
 	void *data_end = data + DESCR_GEN_LEN + GetDescriptorLength(data);
@@ -242,7 +235,7 @@ void parseLongEventDescription(void *data) {
 		assert(name_len < sizeof(dsc));
 		memcpy(dsc, (char *)&name->data, name_len);
 		dsc[name_len] = '\0';
-		printf("--1>%s: ", jsonify(dsc));
+		printf("%s<br>", jsonify(dsc));
 
 		p += ITEM_EXTENDED_EVENT_LEN + name_len;
 
@@ -252,7 +245,7 @@ void parseLongEventDescription(void *data) {
 		assert(value_len < sizeof(dsc));
 		memcpy(dsc, (char *)&value->data, value_len);
 		dsc[value_len] = '\0';
-		printf("--2>%s; ", jsonify(dsc));
+		printf("%s<br>", jsonify(dsc));
 
 		p += ITEM_EXTENDED_EVENT_LEN + value_len;
 	}
@@ -262,12 +255,12 @@ void parseLongEventDescription(void *data) {
 		assert(len < sizeof(dsc));
 		memcpy(dsc, (char *)&text->data, len);
 		dsc[len] = '\0';
-		printf("--3>%s", jsonify(dsc));
+		printf("%s", jsonify(dsc));
 	}
 
-	//printf("/%d/%d/%s", levt->descriptor_number, levt->last_descriptor_number, xmlify(dsc));
+	//printf("/%d/%d/%s", levt->descriptor_number, levt->last_descriptor_number, jsonify(dsc));
 	if (non_empty && levt->descriptor_number == levt->last_descriptor_number)
-		printf("\"}\n");
+		printf("\"\n\t\t}\n");
 } /*}}}*/
 
 /* Parse 0x50 Component Descriptor.  {{{
@@ -308,19 +301,19 @@ static void parseComponentDescription(void *data, enum CR round, int *seen) {
 #endif
 				(*seen)++;
 			}
-			if (round == LANGUAGE) {
 #if 0 //JCB
+			if (round == LANGUAGE) {
 				if (!*seen)
 					printf("\t<language>%s</language>\n", xmllang(&dc->lang_code1));
 				else
 					printf("\t<!--language>%s</language-->\n", xmllang(&dc->lang_code1));
-#endif
 				(*seen)++;
 			}
+#endif
 			break;
 		case 0x03: // Teletext Info
 			if (round == SUBTITLES) {
-			// FIXME: is there a suitable JSON output for this?
+			// FIXME: is there a suitable XMLTV output for this?
 			// if ((dc->component_type)&0x10) //subtitles
 			// if ((dc->component_type)&0x20) //subtitles for hard of hearing
 #if 0 //JCB
@@ -358,6 +351,7 @@ static inline bool get_bit(int *bf, int b) {
 
 /* Parse 0x54 Content Descriptor. {{{ */
 static void parseContentDescription(void *data) {
+#if 0 //JCB
 	assert(GetDescriptorTag(data) == 0x54);
 	struct descr_content *dc = data;
 	int once[256/8/sizeof(int)] = {0,};
@@ -371,18 +365,24 @@ static void parseContentDescription(void *data) {
 		if (c1 > 0 && !get_bit(once, c1)) {
 			set_bit(once, c1);
 			char *c = lookup(description_table, c1);
-			if (c)
-				if (c[0])
+			if (c) {
+				if (c[0]) {
 					printf("\t<category>%s</category>\n", c);
+                }
 #ifdef CATEGORY_UNKNOWN
-				else
+				else {
 					printf("\t<!--category>%s %02X %02X</category-->\n", c+1, c1, c2);
-			else
+                }
+            }
+			else {
 				printf("\t<!--category>%02X %02X</category-->\n", c1, c2);
+            }
 #endif
+
 		}
 		// This is weird in the uk, they use user but not content, and almost the same values
 	}
+#endif
 } /*}}}*/
 
 /* Parse 0x55 Rating Descriptor. {{{ */
@@ -396,9 +396,11 @@ void parseRatingDescription(void *data) {
 			case 0x00: /*undefined*/
 				break;
 			case 0x01 ... 0x0F:
+#if 0 //JCB
 				printf("\t<rating system=\"dvb\">\n");
 				printf("\t\t<value>%d</value>\n", pr->rating + 3);
 				printf("\t</rating>\n");
+#endif
 				break;
 			case 0x10 ... 0xFF: /*broadcaster defined*/
 				break;
@@ -443,8 +445,9 @@ void parseContentIdentifierDescription(void *data) {
 			assert(cridlen < sizeof(buf));
 			memcpy(buf, (char *)&crid_data->crid_byte, cridlen);
 			buf[cridlen] = '\0';
-
-			printf("\t<crid type='%s'>%s</crid>\n", type, xmlify(buf));
+#if 0
+			printf("\t<crid type='%s'>%s</crid>\n", type, jsonify(buf));
+#endif
 			crid_length = 2 + crid_data->crid_length;
 			break;
 		case 0x01: /* Carried in Content Identifier Table (CIT) */
@@ -535,8 +538,9 @@ static void parseDescription(void *data, size_t len) {
 						parseContentIdentifierDescription(desc);
 					break;
 				default:
-					if (round == 0)
-						printf("\t<!--Unknown_Please_Report ID=\"%x\" Len=\"%d\" -->\n", GetDescriptorTag(desc), GetDescriptorLength(desc));
+					if (round == 0) {
+						fprintf(stderr,"\t<!--Unknown_Please_Report ID=\"%x\" Len=\"%d\" -->\n", GetDescriptorTag(desc), GetDescriptorLength(desc));
+                    }
 			}
 		}
 	}
@@ -646,22 +650,25 @@ static void parseEIT(void *data, size_t len) {
 			return;
 		}
 
+        if(programme_count != 0) {
+            printCommaNewline();
+        }
 		programme_count++;
+		printf("\t{\n\t\t\"sid\":\"%s\"", get_channelident(HILO(e->service_id)));
+        printCommaNewline();
+		strftime(date_strbuf, sizeof(date_strbuf), "\t\t\"start\":\"%Y%m%d%H%M%S\"", localtime(&start_time) );
+		printf("%s", date_strbuf);
+        printCommaNewline();
+		strftime(date_strbuf, sizeof(date_strbuf), "\t\t\"stop\":\"%Y%m%d%H%M%S\"", localtime(&stop_time));
+		printf("%s", date_strbuf);
 
-		printf("{\n\t\"sid\":\"%s\"", get_channelident(HILO(e->service_id)));
-        add_comma_newline();
-		strftime(date_strbuf, sizeof(date_strbuf), "\"start\":\"%Y%m%d%H%M%S\"", localtime(&start_time) );
-		printf("\t\t%s", date_strbuf);
-        add_comma_newline();
-		strftime(date_strbuf, sizeof(date_strbuf), "\"stop\":\"%Y%m%d%H%M%S\"", localtime(&stop_time));
-		printf("\t\t%s", date_strbuf);
-        add_comma_newline();
 		//printf("\t<EventID>%i</EventID>\n", HILO(evt->event_id));
-		printf("\t\t\t\"status\":%i", evt->running_status);
+        printCommaNewline();
+		printf("\t\t\"RunningStatus\":%i", evt->running_status);
 		//1 Airing, 2 Starts in a few seconds, 3 Pausing, 4 About to air
 
 		parseDescription(&evt->data, GetEITDescriptorsLoopLength(evt));
-		printf("}\n");
+		printf("\n\t}");
 	}
 } /*}}}*/
 
@@ -669,7 +676,7 @@ static void parseEIT(void *data, size_t len) {
 static void finish_up() {
 	if (!silent)
 		fprintf(stderr, "\n");
-	printf("</tv>\n");
+	printf("\n\t]}\n");
 	exit(0);
 } /*}}}*/
 
@@ -768,7 +775,7 @@ static int openInput(void) {
 			close(fd_epg);
 			return -1;
 		}
-		fprintf(stdout, "\n");
+		fprintf(stderr, "\n");
 		if (!found) {
 			fprintf(stderr, "timeout - try tuning to a multiplex?\n");
 			close(fd_epg);
@@ -798,18 +805,14 @@ int main(int argc, char **argv) {
 		ProgName++;
 	/* Process command line arguments */
 	do_options(argc, argv);
-	/* Load lookup tables. */
-	if (!silent)
-		fprintf(stderr, "\n");
-
 	if (openInput() != 0) {
 		fprintf(stderr, "Unable to get event data from multiplex.\n");
 		exit(1);
 	}
+	printf("{\n\t\"programs\":[\n");
 
 	readEventTables();
 	finish_up();
-
 	return 0;
 } /*}}}*/
 // vim: foldmethod=marker ts=4 sw=4
