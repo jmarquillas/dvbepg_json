@@ -205,7 +205,6 @@ char *jsonify(const char *s) {
 				*r++ = 'r';
 				*r++ = '>';
             break;
-#if 0 // only needed for attributes
 			case '"':
 				*r++ = '&';
 				*r++ = 'q';
@@ -214,7 +213,6 @@ char *jsonify(const char *s) {
 				*r++ = 't';
 				*r++ = ';';
 				break;
-#endif
 			case '&':
 				*r++ = '&';
 				*r++ = 'a';
