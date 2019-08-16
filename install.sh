@@ -12,6 +12,7 @@ cp epgeer.sh /usr/local/bin/epgeer.sh
 rm -fr /var/www/epg
 cp epgeer.service /etc/systemd/system/epgeer.service
 systemctl daemon-reload 
+systemctl enable epgeer.service 
 systemctl start epgeer.service 
 
 
