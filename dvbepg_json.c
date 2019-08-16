@@ -656,16 +656,16 @@ static void parseEIT(void *data, size_t len) {
 		programme_count++;
 		printf("\t{\n\t\t\"sid\":\"%s\"", get_channelident(HILO(e->service_id)));
         printCommaNewline();
-		strftime(date_strbuf, sizeof(date_strbuf), "\t\t\"start\":\"%Y%m%d%H%M%S\"", localtime(&start_time) );
+		strftime(date_strbuf, sizeof(date_strbuf), "\t\t\"start\":\"%H:%M\"", localtime(&start_time) );
 		printf("%s", date_strbuf);
         printCommaNewline();
-		strftime(date_strbuf, sizeof(date_strbuf), "\t\t\"stop\":\"%Y%m%d%H%M%S\"", localtime(&stop_time));
+		strftime(date_strbuf, sizeof(date_strbuf), "\t\t\"stop\":\"%H:%M\"", localtime(&stop_time));
 		printf("%s", date_strbuf);
 
 		//printf("\t<EventID>%i</EventID>\n", HILO(evt->event_id));
         printCommaNewline();
 		printf("\t\t\"RunningStatus\":%i", evt->running_status);
-		//1 Airing, 2 Starts in a few seconds, 3 Pausing, 4 About to air
+        //0 undefined 1 not running 2 starts in a few seconds (e.g. for video recording) 3 pausing 4 running
 
 		parseDescription(&evt->data, GetEITDescriptorsLoopLength(evt));
 		printf("\n\t}");
