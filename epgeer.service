@@ -1,6 +1,6 @@
 [Unit]
 Description=Hospitality EPG grabber
-After=syslog.target network.target mongodb.service mongo-arbiter.service
+After=syslog.target network.target
 
 [Service]
 User=hospitality
@@ -11,3 +11,4 @@ Restart=always
 RestartSec=10
 
 [Install]
+WantedBy=multi-user.target
