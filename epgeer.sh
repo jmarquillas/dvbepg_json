@@ -8,7 +8,7 @@ do
     for i in "${array[@]}"
     do
         echo "TUNNING to $i"
-        dvbtune -f $i -qam 64 -m -gi 4 -cr 2_3 -tm 8&
+        dvbtune -c 1 -f $i -qam 64 -m -gi 4 -cr 2_3 -tm 8&
         dvbepg_json -n >$i.json
         killall dvbtune
         echo "TESTING to $i"
