@@ -661,6 +661,10 @@ static void parseEIT(void *data, size_t len) {
         printCommaNewline();
 		strftime(date_strbuf, sizeof(date_strbuf), "\t\t\"stop\":\"%H:%M\"", localtime(&stop_time));
 		printf("%s", date_strbuf);
+        printCommaNewline();
+		printf("\t\t\"startTS\":\"%lu\"", start_time);
+        printCommaNewline();
+		printf("\t\t\"stopTS\":\"%lu\"", stop_time);
 
 		//printf("\t<EventID>%i</EventID>\n", HILO(evt->event_id));
         printCommaNewline();
