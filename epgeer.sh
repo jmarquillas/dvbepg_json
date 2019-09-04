@@ -8,7 +8,8 @@ do
     EN=$(cat /var/www/html/en.json |jq ".channels[].frequency")
     FR=$(cat /var/www/html/fr.json |jq ".channels[].frequency")
     A=$(echo $ES $FR $EN)
-    array=$(echo "${A[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+    array=($(echo "${A[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+    logger -t EPGEER $array
     for i in "${array[@]}"
     do
         echo "TUNNING to $i"
