@@ -4,7 +4,11 @@ cd /var/www/epg
 while [ 1 ]
 do  
 # get frequencies avoid dups.
-    array=( $(cat /var/www/html/es.json |jq ".channels[].frequency" | sort -u|tr '\n' ' ') )
+    ES=$(cat /var/www/html/es.json |jq ".channels[].frequency")
+    EN=$(cat /var/www/html/en.json |jq ".channels[].frequency")
+    FR=$(cat /var/www/html/fr.json |jq ".channels[].frequency")
+    A=$(echo $ES $FR $EN)
+    array=$(echo "${A[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' ')
     for i in "${array[@]}"
     do
         echo "TUNNING to $i"
