@@ -4,9 +4,9 @@ cd /var/www/epg
 while [ 1 ]
 do  
 # get frequencies avoid dups.
-    ES=$(cat /var/www/html/es.json |jq ".channels[].frequency")
-    EN=$(cat /var/www/html/en.json |jq ".channels[].frequency")
-    FR=$(cat /var/www/html/fr.json |jq ".channels[].frequency")
+    ES=$(mongo --quiet --eval "db.getSiblingDB('rooms')."es".find({},{_id:0}).forEach(printjson)" | jq ".channels[].frequency")
+    EN=$(mongo --quiet --eval "db.getSiblingDB('rooms')."en".find({},{_id:0}).forEach(printjson)" | jq ".channels[].frequency")
+    FR=$(mongo --quiet --eval "db.getSiblingDB('rooms')."fr".find({},{_id:0}).forEach(printjson)" | jq ".channels[].frequency")
     A=$(echo $ES $FR $EN)
     array=($(echo "${A[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
     logger -t EPGEER $array
