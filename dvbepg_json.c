@@ -21,11 +21,22 @@
 #include <time.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <linux/dvb/dmx.h>
 #include "si_tables.h"
 #include "dvbepg_json.h"
 
+#define DEBUG(x) 
+
+#define  _MPEG_PACKET_SIZE_ 188
+#define  _MPEG_PACKET_SYNC_ 0x47
+#define  _DVB_SDT_PID_ 0x11
+#define  _DVB_EIT_PID_  0x12
+
+FILE *out;
 static char *ProgName;
 static char *demux = "/dev/dvb/adapter0/demux0";
 
@@ -41,6 +52,12 @@ static int chan_filter_mask = 0;
 static bool ignore_bad_dates = true;
 static bool ignore_updates = true;
 static bool silent = false;
+static bool stream = false;
+static char *udp_ip;
+static unsigned short udp_port=0;
+static int udp_sock;
+static struct sockaddr_in udp_addr;
+static unsigned int udp_addrlen;
 
 typedef struct chninfo {
 	struct chninfo *next;
@@ -50,6 +67,24 @@ typedef struct chninfo {
 } chninfo_t;
 
 static struct chninfo *channels;
+static void finish_up();
+
+void  ALARMhandler(int sig)
+{
+  signal(SIGALRM, SIG_IGN);          /* ignore this signal       */
+	finish_up();
+  signal(SIGALRM, ALARMhandler);     /* reinstall the handler    */
+}
+static void dump(unsigned char *data,int len)
+{
+  for(int i=0; i < len; i++) {
+    DEBUG(fprintf(stderr,"%02x ",data[i]));
+    if((i > 0) && ((i % 16) == 0)) {
+      DEBUG(fprintf(stderr,"\n\r"));
+    }  
+  }
+  DEBUG(fprintf(stderr,"\n\r"));
+}
 
 /* Print usage information. {{{ */
 static void usage() {
@@ -65,8 +100,8 @@ static void usage() {
 		"\t-n - now next info only\n"
 		"\t-m - current multiplex now_next only\n"
 		"\t-p - other multiplex now_next only\n"
-		"\t-s - silent - no status ouput\n"
-		"\t-u - output updated info - will result in repeated information\n"
+		"\t-s - stream input\n"
+		"\t-u ip:port - UDP multicast input\n"
 		"\t-e encoding - Use other than ISO-6937 default encoding\n"
 		"\n", ProgName, demux);
 	_exit(1);
@@ -93,7 +128,7 @@ static int do_options(int arg_count, char **arg_strings) {
 	int fd;
 
 	while (1) {
-		int c = getopt_long(arg_count, arg_strings, "udsmpnht:o:f:i:e:", Long_Options, &Option_Index);
+		int c = getopt_long(arg_count, arg_strings, "u:dsmpnht:o:f:i:e:", Long_Options, &Option_Index);
 		if (c == EOF)
 			break;
 		switch (c) {
@@ -123,7 +158,14 @@ static int do_options(int arg_count, char **arg_strings) {
 			}
 			break;
 		case 'u':
-			ignore_updates = false;
+      {
+        char *ip = strtok(optarg, ":");
+        if(ip) {
+          udp_ip=strdup(ip);
+          udp_port = atoi(strtok(NULL, ":"));
+        }
+   //			ignore_updates = false;
+      }
 			break;
 		case 'd':
 			ignore_bad_dates = false;
@@ -141,7 +183,7 @@ static int do_options(int arg_count, char **arg_strings) {
 			chan_filter_mask = 0xff;
 			break;
 		case 's':
-			silent = true;
+			stream = true;
 			break;
 		case 'e':
 			iso6937_encoding = optarg;
@@ -718,9 +760,110 @@ read_more:
 			memmove(buf, bhead, n);
 		/* fill with fresh data */
 		r = read(STDIN_FILENO, buf+n, sizeof(buf)-n);
+    fprintf(stderr,"read %d bytes\r\n",r);
 		bhead = buf;
 		n += r;
 	} while (r > 0);
+} /*}}}*/
+
+/* Read EIT segments from DVB-demuxer or file. {{{ */
+static void readEventTablesFromUDP(void) {
+	int r,n=0;
+  unsigned char buf[1<<12], *bhead = buf;
+  unsigned char tsbuf[2048/*_MPEG_PACKET_SIZE_*/],*p;
+  unsigned short pid;
+  size_t l=0;
+	do {
+    r = recvfrom(udp_sock, tsbuf, sizeof(tsbuf), 0, 
+		  (struct sockaddr *) &udp_addr, &udp_addrlen);
+	  if (r < 0) {
+  	  perror("recvfrom");
+	    exit(1);
+	  }
+//    fprintf(stderr,"udp got %d bytes\n\r",r);
+    n=0;
+    p=tsbuf;
+    do  {
+  //    r = read(STDIN_FILENO,tsbuf,_MPEG_PACKET_SIZE_);
+      packet_count++;
+      if (p[0] !=   _MPEG_PACKET_SYNC_) {
+        fprintf(stderr,"Sync byte failed %d\n\r",packet_count);
+        dump(p,r);
+        exit(-1);
+      }
+
+      pid = (p[1] & 0x1f << 8) | (p[2] & 0xff); // 13 bit
+      if (pid == _DVB_EIT_PID_) {
+        DEBUG(fprintf(stderr,"p is:\n\r"));
+        dump(p,_MPEG_PACKET_SIZE_);
+        if((p[1] & 0x40) == 0x40) { //payload start
+            //process previous payload
+            if(l > 0) { 
+              bhead = buf+1;
+              struct si_tab *tab = (struct si_tab *)bhead;
+              l = sizeof(struct si_tab) + GetSectionLength(tab);
+//	            fwrite(bhead,l,1,out);
+              DEBUG(fprintf(stderr,"Buffer is:\n\r"));
+              dump(bhead,l);
+              if (_dvb_crc32((uint8_t *)bhead, l) != 0) {
+                /* data or length is wrong. skip bytewise. */
+                //l = 1; // FIXME
+                crcerr_count++;
+              } 
+              else {
+                parseEIT(bhead, l);
+              }
+            }
+            l=0;
+            bhead=buf;
+        }
+        memcpy(bhead,p+4,_MPEG_PACKET_SIZE_-4);
+          
+        bhead+=_MPEG_PACKET_SIZE_-4;
+        l+=_MPEG_PACKET_SIZE_-4;
+//        dump(buf,l);
+      }
+      p+=_MPEG_PACKET_SIZE_;
+      n+=_MPEG_PACKET_SIZE_;
+    } while (n < r);
+	} while (r > 0);
+#if 0
+	/* The dvb demultiplexer simply outputs individual whole packets (good),
+	 * but reading captured data from a file needs re-chunking. (bad). */
+	do {
+		if (n < sizeof(struct si_tab))
+			goto read_more;
+		struct si_tab *tab = (struct si_tab *)bhead;
+		if (GetTableId(tab) == 0)
+			goto read_more;
+		size_t l = sizeof(struct si_tab) + GetSectionLength(tab);
+		if (n < l)
+			goto read_more;
+		packet_count++;
+		if (_dvb_crc32((uint8_t *)bhead, l) != 0) {
+			/* data or length is wrong. skip bytewise. */
+			//l = 1; // FIXME
+			crcerr_count++;
+		} else
+        fprintf(stderr,"parse %d bytes\r\n",l);
+
+			parseEIT(bhead, l);
+		status();
+		/* remove packet */
+		n -= l;
+		bhead += l;
+		continue;
+read_more:
+		/* move remaining data to front of buffer */
+		if (n > 0)
+			memmove(buf, bhead, n);
+		/* fill with fresh data */
+		r = read(STDIN_FILENO, buf+n,188);
+    fprintf(stderr,"read %d bytes\r\n",r);
+		bhead = buf;
+		n += r;
+	} while (r > 0);
+#endif
 } /*}}}*/
 
 /* Setup demuxer or open file as STDIN. {{{ */
@@ -801,7 +944,10 @@ static int openInput(void) {
 
 /* Main function. {{{ */
 int main(int argc, char **argv) {
-	/* Remove path from command */
+  out = fdopen(dup(fileno(stdout)), "wb");
+  signal(SIGALRM, ALARMhandler);
+  siginterrupt(SIGALRM, 1);
+  /* Remove path from command */
 	ProgName = strrchr(argv[0], '/');
 	if (ProgName == NULL)
 		ProgName = argv[0];
@@ -809,13 +955,47 @@ int main(int argc, char **argv) {
 		ProgName++;
 	/* Process command line arguments */
 	do_options(argc, argv);
-	if (openInput() != 0) {
-		fprintf(stderr, "Unable to get event data from multiplex.\n");
-		exit(1);
-	}
-	printf("{\n\t\"programs\":[\n");
 
-	readEventTables();
+	printf("{\n\t\"programs\":[\n");
+  if(udp_ip)  {
+    struct ip_mreq mreq;
+    udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udp_sock < 0) {
+      perror("socket");
+      exit(1);
+    }
+    memset((char *)&udp_addr, 0,sizeof(udp_addr));
+    udp_addr.sin_family = AF_INET;
+    udp_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    udp_addr.sin_port = htons(udp_port);
+    udp_addrlen = sizeof(udp_addr);
+
+    /* receive */
+    if (bind(udp_sock, (struct sockaddr *) &udp_addr, sizeof(udp_addr)) < 0) {        
+      perror("bind");
+      exit(1);
+    }    
+    struct timeval tv;
+    tv.tv_sec = 3;
+    tv.tv_usec = 0;
+    setsockopt(udp_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);   
+    
+    mreq.imr_multiaddr.s_addr = inet_addr(udp_ip);         
+    mreq.imr_interface.s_addr = htonl(INADDR_ANY);         
+    if (setsockopt(udp_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+		  &mreq, sizeof(mreq)) < 0) {
+	    perror("setsockopt mreq");
+	    exit(1);
+    }  
+    readEventTablesFromUDP();
+  }
+  else {
+    if (openInput() != 0) {
+      fprintf(stderr, "Unable to get event data from multiplex.\n");
+      exit(1);
+    }	  
+    readEventTables();
+  }  
 	finish_up();
 	return 0;
 } /*}}}*/
