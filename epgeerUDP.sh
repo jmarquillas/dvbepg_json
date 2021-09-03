@@ -20,11 +20,12 @@ cd /var/www/epg
         ip=${arrayIP[$i]}
         let port=${arrayPORT[$i]}
         let freq=${arrayFREQ[$i]}
+        touch F$freq.json
         if [ $port -ne 0 ]; then
             echo "UDP RX  from to $ip:$port"
             dvbepg_json -i - -n -s -u $ip:$port -t 5  >$sid.json
             echo "TESTING to $sid"
-            jq -n '{ programs: [ inputs.programs ] | add }'  $sid.json $freq.json | sponge $freq.json
+            jq -n '{ programs: [ inputs.programs ] | add }'  $sid.json F$freq.json | sponge F$freq.json
 
         else
             echo "TUNNING to $freq"
@@ -45,7 +46,7 @@ cd /var/www/epg
     do
         cat $freq.json |jq . >/dev/null
         if [ $? -eq 0 ]; then
-            mongoimport --db epg --collection F$freq --file $freq.json --type json --batchSize 1 --drop --upsert
+            mongoimport --db epg --collection F$freq --file F$freq.json --type json --batchSize 1 --drop --upsert
         else
             echo "$freq.json FAILED"
         fi

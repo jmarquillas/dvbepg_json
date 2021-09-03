@@ -778,6 +778,7 @@ static void readEventTablesFromUDP(void) {
 		  (struct sockaddr *) &udp_addr, &udp_addrlen);
 	  if (r < 0) {
   	  perror("recvfrom");
+      finish_up();
 	    exit(1);
 	  }
 //    fprintf(stderr,"udp got %d bytes\n\r",r);
@@ -975,16 +976,19 @@ int main(int argc, char **argv) {
       perror("bind");
       exit(1);
     }    
-    struct timeval tv;
-    tv.tv_sec = 3;
-    tv.tv_usec = 0;
-    setsockopt(udp_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);   
     
     mreq.imr_multiaddr.s_addr = inet_addr(udp_ip);         
     mreq.imr_interface.s_addr = htonl(INADDR_ANY);         
     if (setsockopt(udp_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
 		  &mreq, sizeof(mreq)) < 0) {
 	    perror("setsockopt mreq");
+	    exit(1);
+    }  
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000;
+    if (setsockopt(udp_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv)  <0) {;   
+	    perror("setsockopt timeout error");
 	    exit(1);
     }  
     readEventTablesFromUDP();
