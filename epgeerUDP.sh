@@ -1,8 +1,8 @@
 #!/bin/bash
 mkdir -p  /var/www/epg
 cd /var/www/epg
-#while [ 1 ]
-#do  
+while [ 1 ]
+do  
 # get frequencies avoid dups.
 #    array=( $(cat /var/www/html/es.json |grep "frequency" |sed 's/.*: //'|sed 's/,//'| sort -u|tr '\n' ' ') )
     arrayIP=($(jq -r '.channels[].ip' /var/www/html/es.json))
@@ -11,7 +11,7 @@ cd /var/www/epg
     arrayFREQ=($(jq -r '.channels[].frequency' /var/www/html/es.json))
     for freq in "${arrayFREQ[@]}"
     do
-      rm -f $freq.json
+      rm -f F$freq.json
     done
 
     i=0
@@ -52,4 +52,4 @@ cd /var/www/epg
         fi
     done
 
-#done
+done

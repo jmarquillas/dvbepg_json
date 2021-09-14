@@ -5,7 +5,7 @@ After=syslog.target network.target
 [Service]
 User=hospitality
 WorkingDirectory=/home/hospitality
-ExecStart=/usr/local/bin/epgeer.sh
+ExecStart=/usr/local/bin/epgeerUDP.sh
 Restart=always
 # Restart service after 10 seconds if  service crashes
 RestartSec=10
